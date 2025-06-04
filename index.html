@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 BLE Sensor Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 1rem; }
+    canvas { max-width: 100%; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>ESP32 BLE Sensor Dashboard</h1>
+  <button onclick="connectBLE()">Connect to ESP32</button>
+  <div class="charts">
+    <canvas id="tempChart"></canvas>
+    <canvas id="humidityChart"></canvas>
+    <canvas id="mq2Chart"></canvas>
+    <canvas id="mq4Chart"></canvas>
+    <canvas id="mq5Chart"></canvas>
+    <canvas id="mq7Chart"></canvas>
+    <canvas id="mq8Chart"></canvas>
+    <canvas id="mq9Chart"></canvas>
+  </div>
+
+<script>
+const uuids = {
+  service:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d5e',
+  temperature:    '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d51',
+  humidity:       '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d52',
+  mq2:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d53',
+  mq4:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d55',
+  mq5:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d54',
+  mq7:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d56',
+  mq8:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d57',
+  mq9:            '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d58'
+};
+
+const charts = {};
+function createChart(id, label) {
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label,
+        data: [],
+        fill: false,
+        borderColor: 'rgb(' + Math.floor(Math.random()*255) + ',' + Math.floor(Math.random()*255) + ',' + Math.floor(Math.random()*255) + ')'
+      }]
+    },
+    options: {
+      animation: false,
+      scales: {
+        x: { display: false },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+['tempChart', 'humidityChart', 'mq2Chart', 'mq4Chart', 'mq5Chart', 'mq7Chart', 'mq8Chart', 'mq9Chart']
+.forEach((id, idx) => createChart(id, id.replace('Chart', '').toUpperCase()));
+
+function updateChart(chartId, value) {
+  const chart = charts[chartId];
+  const data = chart.data.datasets[0].data;
+  const labels = chart.data.labels;
+  const timestamp = new Date().toLocaleTimeString();
+  labels.push(timestamp);
+  data.push(value);
+  if (data.length > 20) {
+    data.shift();
+    labels.shift();
+  }
+  chart.update();
+}
+
+function handleChar(char, chartId) {
+  char.startNotifications().then(() => {
+    char.addEventListener('characteristicvaluechanged', event => {
+      const val = event.target.value.getFloat32(0, true);
+      updateChart(chartId, val);
+    });
+  });
+}
+
+async function connectBLE() {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'ESP32-AirQuality' }],
+      optionalServices: [uuids.service]
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(uuids.service);
+
+    const characteristics = await Promise.all([
+      service.getCharacteristic(uuids.temperature),
+      service.getCharacteristic(uuids.humidity),
+      service.getCharacteristic(uuids.mq2),
+      service.getCharacteristic(uuids.mq4),
+      service.getCharacteristic(uuids.mq5),
+      service.getCharacteristic(uuids.mq7),
+      service.getCharacteristic(uuids.mq8),
+      service.getCharacteristic(uuids.mq9)
+    ]);
+
+    handleChar(characteristics[0], 'tempChart');
+    handleChar(characteristics[1], 'humidityChart');
+    handleChar(characteristics[2], 'mq2Chart');
+    handleChar(characteristics[3], 'mq4Chart');
+    handleChar(characteristics[4], 'mq5Chart');
+    handleChar(characteristics[5], 'mq7Chart');
+    handleChar(characteristics[6], 'mq8Chart');
+    handleChar(characteristics[7], 'mq9Chart');
+
+    console.log("Connected and notifications started");
+  } catch (err) {
+    console.error("BLE Error:", err);
+    alert("Failed to connect: " + err);
+  }
+}
+</script>
+</body>
+</html>

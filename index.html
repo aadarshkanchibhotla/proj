@@ -5,130 +5,114 @@
   <title>ESP32 Sensor Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
-    h2 { color: #333; }
-    canvas { background: #fff; border: 1px solid #ccc; margin-bottom: 30px; }
-    button { padding: 10px 20px; font-size: 16px; margin-bottom: 20px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    h2 {
+      text-align: center;
+    }
+    .chart-container {
+      width: 100%;
+      max-width: 800px;
+      margin: 50px auto;
+    }
   </style>
 </head>
 <body>
+  <h2>ESP32 Sensor Dashboard</h2>
 
-<h2>ESP32 Sensor Dashboard (Bluetooth Classic)</h2>
-<button id="connectBtn">Connect to ESP32</button>
+  <div class="chart-container">
+    <canvas id="tempChart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="humidityChart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq2Chart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq4Chart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq5Chart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq7Chart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq8Chart"></canvas>
+  </div>
+  <div class="chart-container">
+    <canvas id="mq9Chart"></canvas>
+  </div>
 
-<canvas id="tempChart" width="400" height="150"></canvas>
-<canvas id="humidityChart" width="400" height="150"></canvas>
-<canvas id="mqChart" width="400" height="150"></canvas>
+  <script>
+    const channelID = 'YOUR_CHANNEL_ID'; // Replace with your ThingSpeak Channel ID
+    const readAPIKey = 'YOUR_READ_API_KEY'; // Replace with your ThingSpeak Read API Key if the channel is private
 
-<script>
-  let port, reader;
+    const fields = [
+      { id: 1, name: 'Temperature (°C)', canvasId: 'tempChart', color: 'rgba(255, 99, 132, 1)' },
+      { id: 2, name: 'Humidity (%)', canvasId: 'humidityChart', color: 'rgba(54, 162, 235, 1)' },
+      { id: 3, name: 'MQ2', canvasId: 'mq2Chart', color: 'rgba(255, 206, 86, 1)' },
+      { id: 4, name: 'MQ4', canvasId: 'mq4Chart', color: 'rgba(75, 192, 192, 1)' },
+      { id: 5, name: 'MQ5', canvasId: 'mq5Chart', color: 'rgba(153, 102, 255, 1)' },
+      { id: 6, name: 'MQ7', canvasId: 'mq7Chart', color: 'rgba(255, 159, 64, 1)' },
+      { id: 7, name: 'MQ8', canvasId: 'mq8Chart', color: 'rgba(199, 199, 199, 1)' },
+      { id: 8, name: 'MQ9', canvasId: 'mq9Chart', color: 'rgba(83, 102, 255, 1)' }
+    ];
 
-  const connectBtn = document.getElementById('connectBtn');
-
-  const tempData = [];
-  const humidityData = [];
-  const mqData = {
-    mq2: [], mq4: [], mq5: [], mq7: [], mq8: [], mq9: []
-  };
-  const labels = [];
-
-  const tempChart = new Chart(document.getElementById('tempChart'), {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Temperature (°C)',
-        data: tempData,
-        borderColor: 'red',
-        fill: false
-      }]
-    }
-  });
-
-  const humidityChart = new Chart(document.getElementById('humidityChart'), {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Humidity (%)',
-        data: humidityData,
-        borderColor: 'blue',
-        fill: false
-      }]
-    }
-  });
-
-  const mqChart = new Chart(document.getElementById('mqChart'), {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        { label: 'MQ2', data: mqData.mq2, borderColor: 'green', fill: false },
-        { label: 'MQ4', data: mqData.mq4, borderColor: 'orange', fill: false },
-        { label: 'MQ5', data: mqData.mq5, borderColor: 'purple', fill: false },
-        { label: 'MQ7', data: mqData.mq7, borderColor: 'teal', fill: false },
-        { label: 'MQ8', data: mqData.mq8, borderColor: 'brown', fill: false },
-        { label: 'MQ9', data: mqData.mq9, borderColor: 'pink', fill: false }
-      ]
-    }
-  });
-
-  connectBtn.onclick = async () => {
-    try {
-      port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200 });
-      const decoder = new TextDecoderStream();
-      const inputDone = port.readable.pipeTo(decoder.writable);
-      reader = decoder.readable.getReader();
-      readLoop();
-    } catch (err) {
-      alert("Connection failed: " + err);
-    }
-  };
-
-  async function readLoop() {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value) parseData(value.trim());
-    }
-  }
-
-  function parseData(line) {
-    if (!line.startsWith("TEMP")) return;
-
-    const parts = line.split(',');
-    let temp, hum;
-    let mq = {};
-
-    parts.forEach(part => {
-      const [key, val] = part.split(':');
-      if (key && val) {
-        switch (key) {
-          case 'TEMP': temp = parseFloat(val); break;
-          case 'HUM': hum = parseFloat(val); break;
-          default:
-            if (key.startsWith("MQ")) mq[key.toLowerCase()] = parseInt(val);
-        }
-      }
+    fields.forEach(field => {
+      fetchDataAndRenderChart(field);
     });
 
-    const time = new Date().toLocaleTimeString();
-    labels.push(time);
-    if (labels.length > 20) labels.shift();
+    function fetchDataAndRenderChart(field) {
+      const url = `https://api.thingspeak.com/channels/${channelID}/fields/${field.id}.json?results=60&api_key=${readAPIKey}`;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          const labels = data.feeds.map(feed => new Date(feed.created_at).toLocaleTimeString());
+          const values = data.feeds.map(feed => parseFloat(feed[`field${field.id}`]));
 
-    tempData.push(temp); if (tempData.length > 20) tempData.shift();
-    humidityData.push(hum); if (humidityData.length > 20) humidityData.shift();
-
-    for (let key in mqData) {
-      mqData[key].push(mq[key]); if (mqData[key].length > 20) mqData[key].shift();
+          const ctx = document.getElementById(field.canvasId).getContext('2d');
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: field.name,
+                data: values,
+                borderColor: field.color,
+                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderWidth: 2,
+                pointRadius: 2
+              }]
+            },
+            options: {
+              responsive: true,
+              scales: {
+                x: {
+                  display: true,
+                  title: {
+                    display: true,
+                    text: 'Time'
+                  }
+                },
+                y: {
+                  display: true,
+                  title: {
+                    display: true,
+                    text: field.name
+                  }
+                }
+              }
+            }
+          });
+        })
+        .catch(error => {
+          console.error(`Error fetching data for ${field.name}:`, error);
+        });
     }
-
-    tempChart.update();
-    humidityChart.update();
-    mqChart.update();
-  }
-</script>
-
+  </script>
 </body>
 </html>

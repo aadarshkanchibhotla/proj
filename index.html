@@ -1,62 +1,65 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ESP32 Air Quality Monitor</title>
+  <title>BLE Air Quality Dashboard</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+    h1 { color: #333; }
+    #data { margin-top: 20px; }
+    .reading { margin: 10px 0; font-size: 1.2em; }
+    button { padding: 10px 20px; font-size: 1em; cursor: pointer; }
+  </style>
 </head>
 <body>
-  <h1>ESP32 BLE Air Quality Monitor</h1>
+  <h1>ESP32 Air Quality Readings</h1>
   <button onclick="connectBLE()">Connect to ESP32</button>
-  <pre id="log"></pre>
+  <div id="data">
+    <div class="reading" id="temp">Temperature: --</div>
+    <div class="reading" id="humidity">Humidity: --</div>
+    <div class="reading" id="mq2">MQ2: --</div>
+    <div class="reading" id="mq4">MQ4: --</div>
+    <div class="reading" id="mq5">MQ5: --</div>
+    <div class="reading" id="mq7">MQ7: --</div>
+    <div class="reading" id="mq8">MQ8: --</div>
+  </div>
 
   <script>
-    const serviceUUID = '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d5e';
-    const characteristicUUIDs = {
-      temperature: '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d51',
+    const SERVICE_UUID = '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d5e';
+    const CHARACTERISTICS = {
+      temp:     '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d51',
       humidity: '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d52',
-      mq2:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d53',
-      mq5:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d54',
-      mq4:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d55',
-      mq7:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d56',
-      mq8:        '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d57'
-      // mq9 is intentionally omitted
-    };
-
-    const log = (msg) => {
-      console.log(msg);
-      document.getElementById('log').textContent += msg + '\n';
+      mq2:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d53',
+      mq5:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d54',
+      mq4:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d55',
+      mq7:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d56',
+      mq8:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d57'
     };
 
     async function connectBLE() {
       try {
-        log("Requesting BLE device...");
         const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: "ESP32-AirQuality" }],
-          optionalServices: [serviceUUID]
+          filters: [{ name: 'ESP32-AirQuality' }],
+          optionalServices: [SERVICE_UUID]
         });
 
         const server = await device.gatt.connect();
-        log("Connected to device");
+        const service = await server.getPrimaryService(SERVICE_UUID);
 
-        const service = await server.getPrimaryService(serviceUUID);
-        log("Service found");
+        for (const [key, uuid] of Object.entries(CHARACTERISTICS)) {
+          const characteristic = await service.getCharacteristic(uuid);
 
-        // Iterate over all characteristics
-        for (const [name, uuid] of Object.entries(characteristicUUIDs)) {
-          const charac = await service.getCharacteristic(uuid);
-          await charac.startNotifications();
-
-          charac.addEventListener("characteristicvaluechanged", (event) => {
-            const value = event.target.value.getFloat32(0, true); // little-endian float
-            log(`${name.toUpperCase()}: ${value.toFixed(2)}`);
+          characteristic.startNotifications();
+          characteristic.addEventListener('characteristicvaluechanged', event => {
+            const value = event.target.value.getFloat32(0, true).toFixed(2);
+            document.getElementById(key).innerText = `${key.toUpperCase()}: ${value}`;
           });
-
-          log(`${name} characteristic set up`);
         }
 
-        log("Notifications started for all available sensors (except mq9)");
-
+        console.log('[BLE] Connected and notifications set.');
       } catch (error) {
-        log("Failed to connect: " + error);
+        console.error('[BLE] Error:', error);
+        alert('Failed to connect: ' + error);
       }
     }
   </script>

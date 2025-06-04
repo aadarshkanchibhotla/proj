@@ -22,7 +22,6 @@
     <canvas id="mq5Chart"></canvas>
     <canvas id="mq7Chart"></canvas>
     <canvas id="mq8Chart"></canvas>
-    <canvas id="mq9Chart"></canvas>
   </div>
 
 <script>
@@ -62,7 +61,7 @@ function createChart(id, label) {
   });
 }
 
-['tempChart', 'humidityChart', 'mq2Chart', 'mq4Chart', 'mq5Chart', 'mq7Chart', 'mq8Chart', 'mq9Chart']
+['tempChart', 'humidityChart', 'mq2Chart', 'mq4Chart', 'mq5Chart', 'mq7Chart', 'mq8Chart']
 .forEach((id, idx) => createChart(id, id.replace('Chart', '').toUpperCase()));
 
 function updateChart(chartId, value) {
@@ -105,8 +104,8 @@ async function connectBLE() {
       service.getCharacteristic(uuids.mq4),
       service.getCharacteristic(uuids.mq5),
       service.getCharacteristic(uuids.mq7),
-      service.getCharacteristic(uuids.mq8),
-      service.getCharacteristic(uuids.mq9)
+      service.getCharacteristic(uuids.mq8)
+      //service.getCharacteristic(uuids.mq9)
     ]);
 
     handleChar(characteristics[0], 'tempChart');
@@ -116,7 +115,7 @@ async function connectBLE() {
     handleChar(characteristics[4], 'mq5Chart');
     handleChar(characteristics[5], 'mq7Chart');
     handleChar(characteristics[6], 'mq8Chart');
-    handleChar(characteristics[7], 'mq9Chart');
+   // handleChar(characteristics[7], 'mq9Chart');
 
     console.log("Connected and notifications started");
   } catch (err) {

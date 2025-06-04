@@ -1,66 +1,113 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>BLE Air Quality Dashboard</title>
-  <meta charset="utf-8">
+  <meta charset="UTF-8" />
+  <title>ESP32 Bluetooth Classic Sensor Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
-    h1 { color: #333; }
-    #data { margin-top: 20px; }
-    .reading { margin: 10px 0; font-size: 1.2em; }
-    button { padding: 10px 20px; font-size: 1em; cursor: pointer; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    button { padding: 10px 20px; font-size: 16px; }
+    canvas { margin-top: 30px; }
   </style>
 </head>
 <body>
-  <h1>ESP32 Air Quality Readings</h1>
-  <button onclick="connectBLE()">Connect to ESP32</button>
-  <div id="data">
-    <div class="reading" id="temp">Temperature: --</div>
-    <div class="reading" id="humidity">Humidity: --</div>
-    <div class="reading" id="mq2">MQ2: --</div>
-    <div class="reading" id="mq4">MQ4: --</div>
-    <div class="reading" id="mq5">MQ5: --</div>
-    <div class="reading" id="mq7">MQ7: --</div>
-    <div class="reading" id="mq8">MQ8: --</div>
-  </div>
+  <h1>ESP32 Sensor Data (Bluetooth Classic)</h1>
+  <button id="connect">Connect to ESP32</button>
+  <div id="status">Status: Not connected</div>
+
+  <canvas id="sensorChart" width="800" height="400"></canvas>
 
   <script>
-    const SERVICE_UUID = '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d5e';
-    const CHARACTERISTICS = {
-      temp:     '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d51',
-      humidity: '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d52',
-      mq2:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d53',
-      mq5:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d54',
-      mq4:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d55',
-      mq7:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d56',
-      mq8:      '3a58cdc2-fb11-4d5c-8be8-95e0ec7c0d57'
+    const statusDiv = document.getElementById('status');
+    const connectButton = document.getElementById('connect');
+
+    let port;
+    let reader;
+    let chart;
+
+    const labels = [];
+    const data = {
+      labels: labels,
+      datasets: [
+        { label: 'Temperature (°C)', borderColor: 'red', data: [], fill: false },
+        { label: 'Humidity (%)', borderColor: 'blue', data: [], fill: false },
+        { label: 'MQ2', borderColor: 'green', data: [], fill: false },
+        { label: 'MQ4', borderColor: 'orange', data: [], fill: false },
+        { label: 'MQ5', borderColor: 'purple', data: [], fill: false },
+        { label: 'MQ7', borderColor: 'brown', data: [], fill: false },
+        { label: 'MQ8', borderColor: 'teal', data: [], fill: false },
+        { label: 'MQ9', borderColor: 'gray', data: [], fill: false },
+      ]
     };
 
-    async function connectBLE() {
-      try {
-        const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'ESP32-AirQuality' }],
-          optionalServices: [SERVICE_UUID]
-        });
-
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-
-        for (const [key, uuid] of Object.entries(CHARACTERISTICS)) {
-          const characteristic = await service.getCharacteristic(uuid);
-
-          characteristic.startNotifications();
-          characteristic.addEventListener('characteristicvaluechanged', event => {
-            const value = event.target.value.getFloat32(0, true).toFixed(2);
-            document.getElementById(key).innerText = `${key.toUpperCase()}: ${value}`;
-          });
-        }
-
-        console.log('[BLE] Connected and notifications set.');
-      } catch (error) {
-        console.error('[BLE] Error:', error);
-        alert('Failed to connect: ' + error);
+    chart = new Chart(document.getElementById('sensorChart').getContext('2d'), {
+      type: 'line',
+      data: data,
+      options: {
+        responsive: true,
+        animation: false,
+        scales: { x: { title: { display: true, text: 'Timestamp' } } }
       }
+    });
+
+    connectButton.addEventListener('click', async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        statusDiv.innerText = 'Status: Connected to ESP32';
+
+        reader = port.readable.getReader();
+
+        let buffer = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += new TextDecoder().decode(value);
+
+          if (buffer.includes("-----------------------")) {
+            const entry = parseSensorData(buffer);
+            if (entry) updateChart(entry);
+            buffer = '';
+          }
+        }
+      } catch (err) {
+        statusDiv.innerText = 'Error: ' + err;
+      }
+    });
+
+    function parseSensorData(dataString) {
+      try {
+        const temperature = parseFloat(dataString.match(/Temperature.*?: (.*?)\n/)[1]);
+        const humidity = parseFloat(dataString.match(/Humidity.*?: (.*?)\n/)[1]);
+        const mq2 = parseInt(dataString.match(/MQ2: (.*?)\n/)[1]);
+        const mq4 = parseInt(dataString.match(/MQ4: (.*?)\n/)[1]);
+        const mq5 = parseInt(dataString.match(/MQ5: (.*?)\n/)[1]);
+        const mq7 = parseInt(dataString.match(/MQ7: (.*?)\n/)[1]);
+        const mq8 = parseInt(dataString.match(/MQ8: (.*?)\n/)[1]);
+        const mq9 = parseInt(dataString.match(/MQ9: (.*?)\n/)[1]);
+
+        const timestamp = new Date().toLocaleTimeString();
+        return { timestamp, temperature, humidity, mq2, mq4, mq5, mq7, mq8, mq9 };
+      } catch (e) {
+        console.error("Failed to parse data:", e);
+        return null;
+      }
+    }
+
+    function updateChart(entry) {
+      labels.push(entry.timestamp);
+      if (labels.length > 30) labels.shift();
+
+      chart.data.datasets[0].data.push(entry.temperature); if (chart.data.datasets[0].data.length > 30) chart.data.datasets[0].data.shift();
+      chart.data.datasets[1].data.push(entry.humidity);    if (chart.data.datasets[1].data.length > 30) chart.data.datasets[1].data.shift();
+      chart.data.datasets[2].data.push(entry.mq2);         if (chart.data.datasets[2].data.length > 30) chart.data.datasets[2].data.shift();
+      chart.data.datasets[3].data.push(entry.mq4);         if (chart.data.datasets[3].data.length > 30) chart.data.datasets[3].data.shift();
+      chart.data.datasets[4].data.push(entry.mq5);         if (chart.data.datasets[4].data.length > 30) chart.data.datasets[4].data.shift();
+      chart.data.datasets[5].data.push(entry.mq7);         if (chart.data.datasets[5].data.length > 30) chart.data.datasets[5].data.shift();
+      chart.data.datasets[6].data.push(entry.mq8);         if (chart.data.datasets[6].data.length > 30) chart.data.datasets[6].data.shift();
+      chart.data.datasets[7].data.push(entry.mq9);         if (chart.data.datasets[7].data.length > 30) chart.data.datasets[7].data.shift();
+
+      chart.update();
     }
   </script>
 </body>

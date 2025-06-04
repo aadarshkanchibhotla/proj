@@ -1,113 +1,94 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>ESP32 Bluetooth Classic Sensor Monitor</title>
+  <meta charset="UTF-8">
+  <title>ESP32 Sensor Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    button { padding: 10px 20px; font-size: 16px; }
-    canvas { margin-top: 30px; }
+    body { font-family: Arial, sans-serif; padding: 2rem; text-align: center; }
+    canvas { width: 100%; max-width: 800px; margin-bottom: 2rem; }
+    button { padding: 1rem; font-size: 16px; }
   </style>
 </head>
 <body>
-  <h1>ESP32 Sensor Data (Bluetooth Classic)</h1>
-  <button id="connect">Connect to ESP32</button>
-  <div id="status">Status: Not connected</div>
+  <h1>ESP32 Sensor Dashboard (Bluetooth Classic)</h1>
+  <button id="connectBtn">Connect to ESP32</button>
 
-  <canvas id="sensorChart" width="800" height="400"></canvas>
+  <canvas id="sensorChart"></canvas>
 
   <script>
-    const statusDiv = document.getElementById('status');
-    const connectButton = document.getElementById('connect');
+    let port, reader;
 
-    let port;
-    let reader;
-    let chart;
-
-    const labels = [];
-    const data = {
-      labels: labels,
-      datasets: [
-        { label: 'Temperature (°C)', borderColor: 'red', data: [], fill: false },
-        { label: 'Humidity (%)', borderColor: 'blue', data: [], fill: false },
-        { label: 'MQ2', borderColor: 'green', data: [], fill: false },
-        { label: 'MQ4', borderColor: 'orange', data: [], fill: false },
-        { label: 'MQ5', borderColor: 'purple', data: [], fill: false },
-        { label: 'MQ7', borderColor: 'brown', data: [], fill: false },
-        { label: 'MQ8', borderColor: 'teal', data: [], fill: false },
-        { label: 'MQ9', borderColor: 'gray', data: [], fill: false },
-      ]
-    };
-
-    chart = new Chart(document.getElementById('sensorChart').getContext('2d'), {
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    const chart = new Chart(ctx, {
       type: 'line',
-      data: data,
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Temp (°C)', borderColor: 'red', data: [], fill: false },
+          { label: 'Humidity (%)', borderColor: 'blue', data: [], fill: false },
+          { label: 'MQ2', borderColor: 'green', data: [], fill: false },
+          { label: 'MQ4', borderColor: 'purple', data: [], fill: false },
+          { label: 'MQ5', borderColor: 'orange', data: [], fill: false },
+          { label: 'MQ7', borderColor: 'brown', data: [], fill: false },
+          { label: 'MQ8', borderColor: 'gray', data: [], fill: false },
+          { label: 'MQ9', borderColor: 'black', data: [], fill: false }
+        ]
+      },
       options: {
-        responsive: true,
         animation: false,
-        scales: { x: { title: { display: true, text: 'Timestamp' } } }
+        scales: {
+          x: { title: { display: true, text: 'Time' }},
+          y: { beginAtZero: true, title: { display: true, text: 'Sensor Value' } }
+        }
       }
     });
 
-    connectButton.addEventListener('click', async () => {
+    document.getElementById('connectBtn').addEventListener('click', async () => {
       try {
         port = await navigator.serial.requestPort();
         await port.open({ baudRate: 115200 });
-        statusDiv.innerText = 'Status: Connected to ESP32';
 
-        reader = port.readable.getReader();
-
-        let buffer = '';
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += new TextDecoder().decode(value);
-
-          if (buffer.includes("-----------------------")) {
-            const entry = parseSensorData(buffer);
-            if (entry) updateChart(entry);
-            buffer = '';
-          }
-        }
+        const decoder = new TextDecoderStream();
+        const inputDone = port.readable.pipeTo(decoder.writable);
+        const inputStream = decoder.readable;
+        reader = inputStream.getReader();
+        readLoop();
       } catch (err) {
-        statusDiv.innerText = 'Error: ' + err;
+        alert("Connection failed: " + err);
       }
     });
 
-    function parseSensorData(dataString) {
-      try {
-        const temperature = parseFloat(dataString.match(/Temperature.*?: (.*?)\n/)[1]);
-        const humidity = parseFloat(dataString.match(/Humidity.*?: (.*?)\n/)[1]);
-        const mq2 = parseInt(dataString.match(/MQ2: (.*?)\n/)[1]);
-        const mq4 = parseInt(dataString.match(/MQ4: (.*?)\n/)[1]);
-        const mq5 = parseInt(dataString.match(/MQ5: (.*?)\n/)[1]);
-        const mq7 = parseInt(dataString.match(/MQ7: (.*?)\n/)[1]);
-        const mq8 = parseInt(dataString.match(/MQ8: (.*?)\n/)[1]);
-        const mq9 = parseInt(dataString.match(/MQ9: (.*?)\n/)[1]);
+    async function readLoop() {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          try {
+            const data = JSON.parse(value.trim());
+            const now = new Date().toLocaleTimeString();
 
-        const timestamp = new Date().toLocaleTimeString();
-        return { timestamp, temperature, humidity, mq2, mq4, mq5, mq7, mq8, mq9 };
-      } catch (e) {
-        console.error("Failed to parse data:", e);
-        return null;
+            // Maintain 20 samples
+            if (chart.data.labels.length > 20) {
+              chart.data.labels.shift();
+              chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+
+            chart.data.labels.push(now);
+            chart.data.datasets[0].data.push(data.temp);
+            chart.data.datasets[1].data.push(data.humidity);
+            chart.data.datasets[2].data.push(data.mq2);
+            chart.data.datasets[3].data.push(data.mq4);
+            chart.data.datasets[4].data.push(data.mq5);
+            chart.data.datasets[5].data.push(data.mq7);
+            chart.data.datasets[6].data.push(data.mq8);
+            chart.data.datasets[7].data.push(data.mq9);
+            chart.update();
+          } catch (err) {
+            console.warn("Invalid JSON:", value);
+          }
+        }
       }
-    }
-
-    function updateChart(entry) {
-      labels.push(entry.timestamp);
-      if (labels.length > 30) labels.shift();
-
-      chart.data.datasets[0].data.push(entry.temperature); if (chart.data.datasets[0].data.length > 30) chart.data.datasets[0].data.shift();
-      chart.data.datasets[1].data.push(entry.humidity);    if (chart.data.datasets[1].data.length > 30) chart.data.datasets[1].data.shift();
-      chart.data.datasets[2].data.push(entry.mq2);         if (chart.data.datasets[2].data.length > 30) chart.data.datasets[2].data.shift();
-      chart.data.datasets[3].data.push(entry.mq4);         if (chart.data.datasets[3].data.length > 30) chart.data.datasets[3].data.shift();
-      chart.data.datasets[4].data.push(entry.mq5);         if (chart.data.datasets[4].data.length > 30) chart.data.datasets[4].data.shift();
-      chart.data.datasets[5].data.push(entry.mq7);         if (chart.data.datasets[5].data.length > 30) chart.data.datasets[5].data.shift();
-      chart.data.datasets[6].data.push(entry.mq8);         if (chart.data.datasets[6].data.length > 30) chart.data.datasets[6].data.shift();
-      chart.data.datasets[7].data.push(entry.mq9);         if (chart.data.datasets[7].data.length > 30) chart.data.datasets[7].data.shift();
-
-      chart.update();
     }
   </script>
 </body>

@@ -1,95 +1,134 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
   <title>ESP32 Sensor Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; text-align: center; }
-    canvas { width: 100%; max-width: 800px; margin-bottom: 2rem; }
-    button { padding: 1rem; font-size: 16px; }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+    h2 { color: #333; }
+    canvas { background: #fff; border: 1px solid #ccc; margin-bottom: 30px; }
+    button { padding: 10px 20px; font-size: 16px; margin-bottom: 20px; }
   </style>
 </head>
 <body>
-  <h1>ESP32 Sensor Dashboard (Bluetooth Classic)</h1>
-  <button id="connectBtn">Connect to ESP32</button>
 
-  <canvas id="sensorChart"></canvas>
+<h2>ESP32 Sensor Dashboard (Bluetooth Classic)</h2>
+<button id="connectBtn">Connect to ESP32</button>
 
-  <script>
-    let port, reader;
+<canvas id="tempChart" width="400" height="150"></canvas>
+<canvas id="humidityChart" width="400" height="150"></canvas>
+<canvas id="mqChart" width="400" height="150"></canvas>
 
-    const ctx = document.getElementById('sensorChart').getContext('2d');
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [
-          { label: 'Temp (°C)', borderColor: 'red', data: [], fill: false },
-          { label: 'Humidity (%)', borderColor: 'blue', data: [], fill: false },
-          { label: 'MQ2', borderColor: 'green', data: [], fill: false },
-          { label: 'MQ4', borderColor: 'purple', data: [], fill: false },
-          { label: 'MQ5', borderColor: 'orange', data: [], fill: false },
-          { label: 'MQ7', borderColor: 'brown', data: [], fill: false },
-          { label: 'MQ8', borderColor: 'gray', data: [], fill: false },
-          { label: 'MQ9', borderColor: 'black', data: [], fill: false }
-        ]
-      },
-      options: {
-        animation: false,
-        scales: {
-          x: { title: { display: true, text: 'Time' }},
-          y: { beginAtZero: true, title: { display: true, text: 'Sensor Value' } }
-        }
-      }
-    });
+<script>
+  let port, reader;
 
-    document.getElementById('connectBtn').addEventListener('click', async () => {
-      try {
-        port = await navigator.serial.requestPort();
-        await port.open({ baudRate: 115200 });
+  const connectBtn = document.getElementById('connectBtn');
 
-        const decoder = new TextDecoderStream();
-        const inputDone = port.readable.pipeTo(decoder.writable);
-        const inputStream = decoder.readable;
-        reader = inputStream.getReader();
-        readLoop();
-      } catch (err) {
-        alert("Connection failed: " + err);
-      }
-    });
+  const tempData = [];
+  const humidityData = [];
+  const mqData = {
+    mq2: [], mq4: [], mq5: [], mq7: [], mq8: [], mq9: []
+  };
+  const labels = [];
 
-    async function readLoop() {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          try {
-            const data = JSON.parse(value.trim());
-            const now = new Date().toLocaleTimeString();
-
-            // Maintain 20 samples
-            if (chart.data.labels.length > 20) {
-              chart.data.labels.shift();
-              chart.data.datasets.forEach(ds => ds.data.shift());
-            }
-
-            chart.data.labels.push(now);
-            chart.data.datasets[0].data.push(data.temp);
-            chart.data.datasets[1].data.push(data.humidity);
-            chart.data.datasets[2].data.push(data.mq2);
-            chart.data.datasets[3].data.push(data.mq4);
-            chart.data.datasets[4].data.push(data.mq5);
-            chart.data.datasets[5].data.push(data.mq7);
-            chart.data.datasets[6].data.push(data.mq8);
-            chart.data.datasets[7].data.push(data.mq9);
-            chart.update();
-          } catch (err) {
-            console.warn("Invalid JSON:", value);
-          }
-        }
-      }
+  const tempChart = new Chart(document.getElementById('tempChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Temperature (°C)',
+        data: tempData,
+        borderColor: 'red',
+        fill: false
+      }]
     }
-  </script>
+  });
+
+  const humidityChart = new Chart(document.getElementById('humidityChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Humidity (%)',
+        data: humidityData,
+        borderColor: 'blue',
+        fill: false
+      }]
+    }
+  });
+
+  const mqChart = new Chart(document.getElementById('mqChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'MQ2', data: mqData.mq2, borderColor: 'green', fill: false },
+        { label: 'MQ4', data: mqData.mq4, borderColor: 'orange', fill: false },
+        { label: 'MQ5', data: mqData.mq5, borderColor: 'purple', fill: false },
+        { label: 'MQ7', data: mqData.mq7, borderColor: 'teal', fill: false },
+        { label: 'MQ8', data: mqData.mq8, borderColor: 'brown', fill: false },
+        { label: 'MQ9', data: mqData.mq9, borderColor: 'pink', fill: false }
+      ]
+    }
+  });
+
+  connectBtn.onclick = async () => {
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      const decoder = new TextDecoderStream();
+      const inputDone = port.readable.pipeTo(decoder.writable);
+      reader = decoder.readable.getReader();
+      readLoop();
+    } catch (err) {
+      alert("Connection failed: " + err);
+    }
+  };
+
+  async function readLoop() {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) parseData(value.trim());
+    }
+  }
+
+  function parseData(line) {
+    if (!line.startsWith("TEMP")) return;
+
+    const parts = line.split(',');
+    let temp, hum;
+    let mq = {};
+
+    parts.forEach(part => {
+      const [key, val] = part.split(':');
+      if (key && val) {
+        switch (key) {
+          case 'TEMP': temp = parseFloat(val); break;
+          case 'HUM': hum = parseFloat(val); break;
+          default:
+            if (key.startsWith("MQ")) mq[key.toLowerCase()] = parseInt(val);
+        }
+      }
+    });
+
+    const time = new Date().toLocaleTimeString();
+    labels.push(time);
+    if (labels.length > 20) labels.shift();
+
+    tempData.push(temp); if (tempData.length > 20) tempData.shift();
+    humidityData.push(hum); if (humidityData.length > 20) humidityData.shift();
+
+    for (let key in mqData) {
+      mqData[key].push(mq[key]); if (mqData[key].length > 20) mqData[key].shift();
+    }
+
+    tempChart.update();
+    humidityChart.update();
+    mqChart.update();
+  }
+</script>
+
 </body>
 </html>
